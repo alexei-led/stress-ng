@@ -1,6 +1,5 @@
 # stress-ng
-
-[![](https://badge.imagelayers.io/alexeiled/stress-ng:latest.svg)](https://imagelayers.io/?images=alexeiled/stress-ng:latest) [![Docker badge](https://img.shields.io/docker/pulls/alexeiled/stress-ng.svg)](https://hub.docker.com/r/alexeiled/stress-ng/)
+[![Docker Build Statu](https://img.shields.io/docker/build/alexeiled/stress-ng.svg)]() [![Docker Pulls](https://img.shields.io/docker/pulls/alexeiled/stress-ng.svg)]() [![Docker Stars](https://img.shields.io/docker/stars/alexeiled/stress-ng.svg)]() [![ImageLayers Size](https://img.shields.io/imagelayers/image-size/alexeiled/stress-ng/latest.svg)]() [![ImageLayers Layers](https://img.shields.io/imagelayers/layers/alexeiled/stress-ng/latest.svg)]()
 
 
 ## Usage
