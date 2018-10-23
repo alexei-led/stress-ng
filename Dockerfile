@@ -17,6 +17,6 @@ RUN STATIC=1 make
 # Final image
 FROM scratch
 
-COPY --from=builder /code/stress-ng/stress-ng /usr/local/bin
+COPY --from=builder /code/stress-ng/stress-ng /
 
-ENTRYPOINT ["/usr/local/bin/stress-ng"]
+ENTRYPOINT ["/stress-ng"]
