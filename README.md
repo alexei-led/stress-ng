@@ -1,6 +1,6 @@
 # stress-ng
 [![](https://github.com/alexei-led/stress-ng/workflows/Docker%20Image%20CI/badge.svg)](https://github.com/alexei-led/stress-ng/actions?query=workflow%3A"Docker+Image+CI") [![](https://github.com/alexei-led/stress-ng/workflows/Check%20stress-ng%20Release/badge.svg)](https://github.com/alexei-led/stress-ng/actions?query=workflow%3A"Check+stress-ng+Release")
-[![Docker Pulls](https://img.shields.io/docker/pulls/alexeiled/stress-ng.svg)]() [![Docker Stars](https://img.shields.io/docker/stars/alexeiled/stress-ng.svg)]()
+[![Docker Pulls](https://img.shields.io/docker/pulls/alexeiled/stress-ng.svg)](https://hub.docker.com/r/alexeiled/stress-ng/) [![Docker Stars](https://img.shields.io/docker/stars/alexeiled/stress-ng.svg)](https://hub.docker.com/r/alexeiled/stress-ng/)
 
 ## Info
 
