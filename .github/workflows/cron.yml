@@ -14,14 +14,14 @@ jobs:
     - name: get latest repository tag
       id: get_latest_tag
       run: |
-        repo_tag=$(curl --silent https://api.github.com/repos/${GITHUB_REPOSITORY}/tags | jq -r '.[0].name' | cut -c2-)
+        repo_tag=$(curl -L --silent https://api.github.com/repos/${GITHUB_REPOSITORY}/tags | jq -r '.[0].name' | cut -c2-)
         echo ::set-output name=repo_tag::${repo_tag}
         echo "::debug::git repository tag ${repo_tag}"
       
     - name: get latest stress-ng release
       id: get_latest_stress_ng_release
       run: |
-        stress_ng_version=$(curl --silent https://api.github.com/repos/ColinIanKing/stress-ng/tags | jq -r '.[0].name' | cut -c2-)
+        stress_ng_version=$(curl -L --silent https://api.github.com/repos/ColinIanKing/stress-ng/tags | jq -r '.[0].name' | cut -c2-)
         echo ::set-output name=stress_ng_version::${stress_ng_version}
         echo "::debug::stress-ng latest release ${stress_ng_version}"
 

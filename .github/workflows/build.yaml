@@ -26,7 +26,7 @@ jobs:
       run: |
         version=${IMAGE_TAG}
         url=https://github.com/ColinIanKing/stress-ng/archive/V${IMAGE_TAG}.tar.gz
-        curl --output /dev/null --silent --head --fail "$url" || version=$(curl --silent https://api.github.com/repos/ColinIanKing/stress-ng/tags | jq -r '.[0].name' | cut -c2-)
+        curl -L --output /dev/null --silent --head --fail "$url" || version=$(curl -L --silent https://api.github.com/repos/ColinIanKing/stress-ng/tags | jq -r '.[0].name' | cut -c2-)
         echo "::debug::get stress-ng version ${version}"
         echo "::set-env name=STRESS_NG_VERSION::${version}"
 
