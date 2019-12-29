@@ -6,9 +6,10 @@ RUN apt-get update && apt-get install -yq make gcc
 WORKDIR /code
 
 # download stress-ng sources
-ENV STRESS_VER=0.09.41
-ADD https://github.com/ColinIanKing/stress-ng/archive/V${STRESS_VER}.tar.gz .
-RUN tar -xf V${STRESS_VER}.tar.gz && mv stress-ng-${STRESS_VER} stress-ng
+ARG STRESS_NG_VERSION
+ENV STRESS_NG_VERSION ${STRESS_NG_VERSION:-0.10.10}
+ADD https://github.com/ColinIanKing/stress-ng/archive/V${STRESS_NG_VERSION}.tar.gz .
+RUN tar -xf V${STRESS_NG_VERSION}.tar.gz && mv stress-ng-${STRESS_NG_VERSION} stress-ng
 
 # make static version
 WORKDIR /code/stress-ng

@@ -1,0 +1,46 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - '*'
+
+jobs:
+
+  build:
+ 
+    runs-on: ubuntu-18.04
+ 
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: decide on tag
+      run: |
+        image_tag=$(echo $GITHUB_REF | sed -e 's/refs\/heads\///g' -e 's/refs\/tags\///g' | sed -e 's/master/latest/g')
+        echo "::debug::decide on image tag ${image_tag}"
+        echo "::set-env name=IMAGE_TAG::${image_tag}"
+
+    - name: get stress-ng version
+      run: |
+        version=${IMAGE_TAG}
+        url=https://github.com/ColinIanKing/stress-ng/archive/V${IMAGE_TAG}.tar.gz
+        curl --output /dev/null --silent --head --fail "$url" || version=$(curl --silent https://api.github.com/repos/ColinIanKing/stress-ng/tags | jq -r '.[0].name' | cut -c2-)
+        echo "::debug::get stress-ng version ${version}"
+        echo "::set-env name=STRESS_NG_VERSION::${version}"
+
+    - name: build image
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      run: |
+        docker build --build-arg STRESS_NG_VERSION=${STRESS_NG_VERSION} --tag ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG} .
+    
+    - name: push image
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      run: |
+        echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
+        docker push ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG}
+        docker logout

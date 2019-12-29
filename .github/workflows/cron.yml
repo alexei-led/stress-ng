@@ -1,0 +1,36 @@
+name: Check stress-ng Release
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+    #- cron: "*/5 * * * *" uncomment for debug (every 5 min)
+
+jobs:
+  check_release:
+
+    runs-on: ubuntu-18.04
+
+    steps:
+    - name: get latest repository tag
+      id: get_latest_tag
+      run: |
+        repo_tag=$(curl --silent https://api.github.com/repos/${GITHUB_REPOSITORY}/tags | jq -r '.[0].name' | cut -c2-)
+        echo ::set-output name=repo_tag::${repo_tag}
+        echo "::debug::git repository tag ${repo_tag}"
+      
+    - name: get latest stress-ng release
+      id: get_latest_stress_ng_release
+      run: |
+        stress_ng_version=$(curl --silent https://api.github.com/repos/ColinIanKing/stress-ng/tags | jq -r '.[0].name' | cut -c2-)
+        echo ::set-output name=stress_ng_version::${stress_ng_version}
+        echo "::debug::stress-ng latest release ${stress_ng_version}"
+
+    - name: tag repository with latest stress-ng version if needed
+      id: tag_repository
+      if: steps.get_latest_tag.outputs.repo_tag != steps.get_latest_stress_ng_release.outputs.stress_ng_version
+      uses: tvdias/github-tagger@v0.0.1
+      with:
+        repo-token: ${{ secrets.GITHUB_PAT_TOKEN }}
+        tag: ${{steps.get_latest_stress_ng_release.outputs.stress_ng_version}}
+
+        
