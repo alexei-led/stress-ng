@@ -14,7 +14,7 @@ jobs:
     - name: get latest repository tag
       id: get_latest_tag
       run: |
-        repo_tag=$(curl -L --silent https://api.github.com/repos/${GITHUB_REPOSITORY}/tags | jq -r '.[0].name' | cut -c2-)
+        repo_tag=$(curl -L --silent https://api.github.com/repos/${GITHUB_REPOSITORY}/tags | jq -r '.[0].name')
         echo ::set-output name=repo_tag::${repo_tag}
         echo "::debug::git repository tag ${repo_tag}"
       
