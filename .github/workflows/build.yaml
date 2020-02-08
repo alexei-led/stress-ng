@@ -35,6 +35,7 @@ jobs:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
       run: |
         docker build --build-arg STRESS_NG_VERSION=${STRESS_NG_VERSION} --tag ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG} .
+        docker build --build-arg STRESS_NG_VERSION=${STRESS_NG_VERSION} --tag ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG}-ubuntu -f ubuntu.Dockerfile .
     
     - name: push image
       env:
@@ -43,4 +44,5 @@ jobs:
       run: |
         echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
         docker push ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG}
+        docker push ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG}-ubuntu
         docker logout
