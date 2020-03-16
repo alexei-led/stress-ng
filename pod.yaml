@@ -8,6 +8,7 @@ spec:
   containers:
   - name: stress-ng
     image: alexeiled/stress-ng:latest-ubuntu
+    imagePullPolicy: Always
     args:
     - tail
     - -f
