@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stress-ng
+  labels:
+    app: stress-ng
+spec:
+  containers:
+  - name: stress-ng
+    image: alexeiled/stress-ng:latest-ubuntu
+    args:
+    - tail
+    - -f
+    - /dev/null
+    securityContext:
+      # privileged: true
+      capabilities:
+        add: ["SYS_ADMIN"]
+    volumeMounts:
+    - name: dockersocket
+      mountPath: /var/run/docker.sock
+    - name: cgroupfs
+      mountPath: /sys/fs/cgroup
+  # volume docker.sock
+  volumes:
+  - hostPath:
+      path: /var/run/docker.sock
+    name: dockersocket
+  - hostPath:
+      path: /sys/fs/cgroup
+    name: cgroupfs
