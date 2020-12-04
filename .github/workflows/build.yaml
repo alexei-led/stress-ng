@@ -14,35 +14,67 @@ jobs:
     runs-on: ubuntu-18.04
  
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+      
+    - name: Set up Docker buildx
+      id: buildx
+      uses: docker/setup-buildx-action@v1
 
     - name: decide on tag
+      id: tagger
       run: |
-        image_tag=$(echo $GITHUB_REF | sed -e 's/refs\/heads\///g' -e 's/refs\/tags\///g' | sed -e 's/master/latest/g')
-        echo "::debug::decide on image tag ${image_tag}"
-        echo "::set-env name=IMAGE_TAG::${image_tag}"
+        tag=$(echo "${{ github.ref }}" | sed -e 's/^refs\/heads\///g' -e 's/^refs\/tags\///g' -e 's/^refs\/pull\///g' -e 's/\/merge$//g' | sed -e 's/master/latest/g')
+        echo "::set-output name=tag::${tag}"
+        echo "::debug::docker image tag ${tag}"
 
     - name: get stress-ng version
+      id: get_stress_ng
       run: |
-        version=${IMAGE_TAG}
-        url=https://github.com/ColinIanKing/stress-ng/archive/V${IMAGE_TAG}.tar.gz
+        version=${{ steps.tagger.outputs.tag }}
+        url=https://github.com/ColinIanKing/stress-ng/archive/${{ steps.tagger.outputs.tag }}
+        version=$(curl --silent https://api.github.com/repos/aws/amazon-ssm-agent/releases/latest | jq -r .tag_name)
         curl -L --output /dev/null --silent --head --fail "$url" || version=$(curl -L --silent https://api.github.com/repos/ColinIanKing/stress-ng/tags | jq -r '.[0].name' | cut -c2-)
         echo "::debug::get stress-ng version ${version}"
-        echo "::set-env name=STRESS_NG_VERSION::${version}"
+        echo "::set-output name=version::${version}"
+  
+    - name: login to Docker Registry
+      uses: docker/login-action@v1 
+      with:
+        registry: ${{ secrets.DOCKER_REGISTRY }} 
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: build image
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.CR_PAT }}
+
+    - name: decide on image name
+      id: nomenclator
       env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_REPOSITORY: ${{ secrets.DOCKER_REPOSITORY }}
       run: |
-        docker build --build-arg STRESS_NG_VERSION=${STRESS_NG_VERSION} --tag ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG} .
-        docker build --build-arg STRESS_NG_VERSION=${STRESS_NG_VERSION} --tag ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG}-ubuntu -f ubuntu.Dockerfile .
-    
-    - name: push image
-      env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-      run: |
-        echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
-        docker push ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG}
-        docker push ${DOCKER_USERNAME}/stress-ng:${IMAGE_TAG}-ubuntu
-        docker logout
+        name=${DOCKER_REPOSITORY}
+        if [ -z "$name" ]; then 
+          name=${{ github.repository }}
+        fi
+        echo ::set-output name=name::${name}
+        echo ::debug::docker image name ${name}
+
+    - name: Build and push Docker image
+      id: build-push
+      uses: docker/build-push-action@v2
+      with:
+        build-args: VERSION=${{ steps.tagger.outputs.tag }}
+        platforms: linux/amd64,linux/arm64
+        tags: |
+         ${{ steps.nomenclator.outputs.name }}:${{ steps.tagger.outputs.tag }}
+         ${{ steps.nomenclator.outputs.name }}:latest
+         ghcr.io/${{ github.repository }}:${{ steps.tagger.outputs.tag }}
+         ghcr.io/${{ github.repository }}:latest
+        push: true

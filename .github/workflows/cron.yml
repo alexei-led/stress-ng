@@ -30,7 +30,7 @@ jobs:
       if: steps.get_latest_tag.outputs.repo_tag != steps.get_latest_stress_ng_release.outputs.stress_ng_version
       uses: tvdias/github-tagger@v0.0.1
       with:
-        repo-token: ${{ secrets.GITHUB_PAT_TOKEN }}
+        repo-token: ${{ secrets.CR_PAT }}
         tag: ${{steps.get_latest_stress_ng_release.outputs.stress_ng_version}}
 
         
