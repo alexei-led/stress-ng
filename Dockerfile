@@ -1,4 +1,4 @@
-FROM debian:jessie as builder
+FROM debian:buster as builder
 
 # intall gcc and supporting packages
 RUN apt-get update && apt-get install -yq make gcc
