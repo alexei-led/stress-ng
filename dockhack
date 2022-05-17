@@ -1,0 +1,469 @@
+#!/bin/bash
+## Some rudimentary utils I cooked up to introspect & hack docker containers
+## Copyright 2014: Tavis Rudd <tavis@damnsimple.com>
+## License: MIT
+
+trap "exit 1" TERM
+die() {
+    echo "$@" >/dev/stderr
+    if (( $BASH_SUBSHELL >= 1 )); then
+        # a hack for clean termination from sub-sub-shells. This is the worst wart of bash
+        kill -s TERM "$$"
+        return 1
+    else
+        exit 1
+    fi
+}
+
+_path() {
+    # a wraper around fs paths so I can rewrite them in tests
+    echo "$1"
+}
+
+_is_version1() {
+    docker version | grep '^Client version: 1' >/dev/null
+}
+
+last_id() {
+    docker ps -l -q --no-trunc
+}
+last() {
+    last_id
+}
+
+get_id() {
+    case "$1" in
+        l|last)
+            last_id
+            ;;
+        *)
+            local prop
+            if _is_version1; then
+                prop=".Id"
+            else
+                prop=".ID"
+            fi
+            ret="$(docker inspect --format "{{$prop}}" "$1")"
+            [[ "$ret" == "<no value>" ]] && die "invalid container id: $1"
+            echo -n "$ret"
+            ;;
+    esac
+}
+
+id() {
+    get_id "$1"
+}
+
+get_prop() {
+    [[ "$1" == "<no value>" ]] && return 1
+    docker inspect --format "{{$2}}" "$1"
+}
+
+get_ip(){
+    local ID="$(get_id "$1")"
+    get_prop "$ID" ".NetworkSettings.IPAddress"
+}
+
+get_root_pid(){
+    local ID="$(get_id "$1")"
+    get_prop "$ID" ".State.Pid"
+}
+
+get_cgroup_parent(){
+    local ID="$(get_id "$1")"
+    local cgroup_parent=$(get_prop "$ID" ".HostConfig.CgroupParent")
+    [ -z "$cgroup_parent" ] && echo "docker" || echo $cgroup_parent
+}
+
+pids() {
+    local ID="$(get_id "$1")"
+    paste -sd "," < "$(_path "/sys/fs/cgroup/devices/docker/$ID/tasks")"
+}
+
+fsroot() {
+    local ID="$(get_id "$1")"
+    local graph_root=$(get_prop "$ID" ".HostnamePath" | sed 's/containers.*$//')
+    local driver=$(get_prop "$ID" ".Driver")
+    case "$driver" in
+        aufs)
+            echo "${graph_root}aufs/mnt/$ID"
+            ;;
+        btrfs)
+            echo "${graph_root}btrfs/subvolumes/$ID"
+            ;;
+        devicemapper)
+            echo "${graph_root}devicemapper/mnt/$ID/rootfs/"
+            ;;
+        *)
+            die "I don't know how to handle this type of driver: $driver"
+    esac
+}
+
+_cp() {
+    local ID="$(get_id "$1")"
+    local source="$2"
+    local target="$3"
+    local root="$(fsroot "$ID")"
+    target="$(readlink -m "$root/$target")"
+    cp "$source" "$(_path "$target")"
+}
+
+
+htop() {
+    command htop -p "$(pids "$1")"
+}
+
+ssh() {
+    local IP="$(get_ip "$1")"
+    shift
+    command ssh -q -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no "$IP" "$@"
+}
+
+ssh-cp-key() {
+    local ID="$(get_id "$1")"
+    local rootssh="$(readlink -m "$(fsroot "$ID")/root/.ssh")"
+    local auth_keys="$(_path "$rootssh/authorized_keys")"
+    mkdir -p "$rootssh"
+    if [[ -z "$2" ]]; then
+        cat ~/.ssh/id_*.pub >> "$auth_keys"
+    else
+        [[ -e "$2" ]] || die "pubkey file $2 does not exist"
+        cat "$2" >> "$auth_keys"
+    fi
+}
+
+
+supported_cgroups() {
+    local ID="$(get_id "$1")"
+    lscgroup | awk -F: "/$ID/ {print \$1}" | paste -sd,
+}
+
+cg_exec() {
+    local ID="$(get_id "$1")"
+    shift
+    lscgroup |grep $ID
+    sleep 900
+    cgexec -g "$(supported_cgroups "$ID"):/kubepods.slice/kubepods-besteffort.slice/$(get_cgroup_parent "$ID")/docker-$ID.scope" -- "$@"
+}
+
+ns_enter() {
+    local ID="$(get_id "$1")"
+    local PID="$(get_root_pid "$1")"
+    shift
+    nsenter --target "$PID" --mount --uts --ipc --net --pid -- "$@"
+}
+
+inside() {
+    local ID="$(get_id "$1")"
+    local PID="$(get_root_pid "$1")"
+    shift
+    lscgroup |grep $ID
+    sleep 900
+    cgexec -g "$(supported_cgroups "$ID"):/kubepods.slice/kubepods-besteffort.slice/$(get_cgroup_parent "$ID")/docker-$ID.scope" -- \
+        nsenter --target "$PID" --mount --uts --ipc --net --pid -- "$@"
+}
+
+get_caps() {
+    local PID=$(get_root_pid "$1")
+    ruby -e "require 'pp'; require 'cap2'; pp Cap2.process($PID).getcaps[:effective]" | \
+        egrep --color=auto 'admin|$'
+}
+
+pgrep() {
+    local ID="$(get_id "$1")"
+    shift
+    inside "$ID" pgrep "$@"
+}
+
+
+netfilter() {
+    local IP="$(get_ip "$1")"
+    {
+        iptables -L -nv
+        iptables -L -nv -t nat
+    } | grep "$IP"
+}
+
+veth_ifindex() {
+    inside "$1" ethtool -S eth0 | awk '/ifindex/ {print $2}'
+}
+
+host_veth() {
+    local ifindex="$(veth_ifindex "$1")"
+    ip link | awk -F": " "/^$ifindex/ {print \$2}"
+# or if I wanted to contort myself:
+#     python2 <<EOF
+# import ctypes
+# libc = ctypes.CDLL("libc.so.6")
+# res = ctypes.create_string_buffer(20)
+# libc.if_indextoname(ctypes.c_int($ifindex), res)
+# print res.value
+# EOF
+}
+_indent () {
+    sed "s/^/    /"
+}
+_netinfo() {
+    local ID="$(get_id "$1")"
+    local IP="$(get_ip "$1")"
+    local HOST_VETH="$(host_veth "$ID")"
+    echo "docker container: $ID"
+    echo "container ipv4: $IP"
+    echo "host veth: $HOST_VETH"
+    ip link show "$HOST_VETH" | _indent
+    echo "host netfilter/iptables for container:"
+    netfilter "$ID" | _indent
+    echo 'inside `ip addr`:'
+    inside "$ID" ip addr | _indent
+    echo 'inside `ip route`:'
+    inside "$ID" ip route | _indent
+    echo 'inside `arp`:'
+    inside "$ID" arp | _indent
+    echo "inside /etc/hosts:"
+    inside "$ID" cat /etc/hosts | _indent
+    echo "inside /etc/resolv.conf:"
+    inside "$ID" cat /etc/resolv.conf | _indent
+    echo 'inside inet servers `ss -ln --tcp --udp`:'
+    inside "$ID" ss -ln --tcp --udp | _indent
+    echo 'inside tcp connections `ss --tcp`:'
+    inside "$ID" ss --tcp | _indent
+}
+net () {
+    if [[ -t 1 ]]; then
+        _netinfo "$1" | less
+    else
+        _netinfo "$1"
+    fi
+}
+
+mem() {
+    local ID="$(get_id "$1")"
+    cat "/sys/fs/cgroup/memory/docker/$ID/memory.stat"
+
+    echo -n "usage_in_bytes "
+    cat "/sys/fs/cgroup/memory/docker/$ID/memory.max_usage_in_bytes"
+
+    echo -n "max_usage_in_bytes "
+    cat "/sys/fs/cgroup/memory/docker/$ID/memory.max_usage_in_bytes"
+
+    echo -n "limit_in_bytes "
+    cat "/sys/fs/cgroup/memory/docker/$ID/memory.limit_in_bytes"
+
+    echo -n "failcnt "
+    cat "/sys/fs/cgroup/memory/docker/$ID/memory.failcnt"
+
+    echo -n "swappiness "
+    cat "/sys/fs/cgroup/memory/docker/$ID/memory.swappiness"
+
+    cat "/sys/fs/cgroup/memory/docker/$ID/memory.oom_control"
+}
+memory() {
+    mem "$@"
+}
+
+pstree() {
+    local PID="$(get_root_pid "$1")"
+    command pstree -usl -H"$PID" "$PID"
+}
+
+ps_inside() {
+    inside "$1" ps -efH
+}
+
+ps_outside() {
+    ps -H -f -p "$(pids "$1")"
+}
+
+psx() {
+    echo '# PIDs inside container'
+    ps_inside "$1"
+    echo '# PIDs outside in host'
+    ps_outside "$1"
+}
+
+_install_nsenter(){
+    echo ">> Downloading & installing nsenter from the util-linux package."
+    mkdir -p /usr/local/sbin/
+    wget -O /usr/local/sbin/nsenter https://s3.amazonaws.com/dss.public-downloads/nsenter
+    chmod +x /usr/local/sbin/nsenter
+}
+
+_get_distro() {
+    if grep Ubuntu /etc/os-release >/dev/null; then
+        echo ubuntu
+    elif [[ -e /etc/debian_version ]]; then
+        echo debian
+    elif [[ -e /etc/gentoo-release ]]; then
+        echo gentoo
+    fi
+}
+
+_install_cgroup_bin() {
+    case _get_distro in
+        gentoo)
+            emerge -u libcgroup
+            ;;
+        ubuntu|debian)
+            apt-get install cgroup-bin
+            ;;
+        *)
+            echo ">> You need to install the libcgroup (aka cgroup-bin) package." >/dev/stderr
+            return 1
+            ;;
+    esac
+}
+install_deps() {
+    {
+        which nsenter &> /dev/null || _install_nsenter
+    } && {
+        which lscgroup &>/dev/null || _install_cgroup_bin
+    } ||
+    echo "dockhack requires recent versions of the cgroup-bin (aka libcgroup) and util-linux packages."
+}
+
+usage() {
+    cat <<"EOF"
+dockhack: some utilities to inspect and hack into Docker containers
+
+Usage:
+  dockhack install_deps
+    attempts to install dockhack's deps: the `cgroup-bin` package and
+    `nsenter` from `util-linux`
+
+  dockhack last
+  dockhack last_id
+    prints the full id of the last container to run
+    short-hand for `docker ps -l -q --no-trunc`
+
+  dockhack id CID
+  dockhack get_id CID
+    resolve and print the full SHA version of a container ID
+
+  dockhack get_prop CID PROP
+    lookup a container property via `docker inspect --format`
+
+  dockhack get_ip CID
+    print the container's IPv4 address
+
+  dockhack mem CID
+  dockhack memory CID
+    print the container's memory stats and limits
+
+  dockhack net CID
+    print lots of info about the network configuration of the container
+
+  dockhack netfilter CID
+    print all netfilter/iptables rules related to the container
+
+  dockhack get_root_pid CID
+    print the container's top-level PID
+
+  dockhack pids CID
+    print a comma delimited list of all PIDs in the container
+
+  dockhack ps_outside CID
+    ps -H -f -p $(pids "$CID")
+
+  dockhack ps_inside CID
+    run `ps -efH` inside the container
+
+  dockhack psx CID
+    run both ps_outside and ps_inside
+
+  dockhack pgrep CID <pgrep args>
+    run pgrep inside the container
+
+  dockhack pstree CID
+    run `pstree` scoped to the container processes
+
+  dockhack htop CID
+    run htop, on the host, with the PIDs limited to those in the container
+
+  dockhack fsroot CID
+    print the mount path of the container's filesystem inside /var/lib/docker
+
+  dockhack cp CID source-filepath-on-host target-filepath-in-container
+    the inverse of `docker cp` which copies from the container to the host
+
+  dockhack ssh CID
+    ssh into the container, assuming you've got init+sshd running
+
+  dockhack ssh-cp-key CID [pubkey-path]
+    cp your ssh pubkey into /root/.ssh/authorized_keys in the container
+
+  The following require the `cgroup-bin` package (cgexec, lscgroup,
+  etc.) and `nsenter`
+  (http://man7.org/linux/man-pages/man1/nsenter.1.html) from
+  util-linux version 2.23 or greater
+
+  dockhack inside CID <any command available in the container plus its args>
+    run a command inside the container cgroups + namespaces BUT without
+    dropping any capabilities. This is useful for a) running
+    privileged commands inside a non-privileged container and b) doing
+    the equivalent of lxc-attach when running docker with
+    libcontainer.
+    e.g.
+      ip route ...
+      mount ....
+      tcpdump ...
+
+  dockhack cg_exec CID <any command available in the host plus its args>
+    a wrapper around `cgexec` from `cgroup-bin` which wires up the
+    required arguments. This uses the host's filesystem and, thus, the
+    command must be available on the host.
+
+  dockhack ns_enter CID <any command available in the container plus its args>
+    a wrapper around `nsenter` from `util-linux` which wires up the
+    required arguments. It uses the mount, uts, ipc, pid and net namespaces.
+
+  dockhack supported_cgroups CID
+    print a comma separated list of cgroups used for the container
+
+  dockhack get_caps CID
+    print the list of posix capabilities available in the container
+    requires the ruby gem `cap2`
+
+where
+  CID := { container-long-sha | container-short-sha | container-name | l | last}
+      l is a short-hand for last
+      e.g. 6a3827868f31
+           6a3827868f31b549e2cfcf47e0f28a1ecc631aeec7a661c5a3cfa3966a66ca1d
+           compassionate_lovelace
+  PROP := anything that would resolve correctly in `docker inspect --format '{{PROP}}'`
+
+You can also source this script as a bash library: `source dockhack`.
+
+EOF
+
+
+}
+
+main() {
+    case "$@" in
+        -h|--help|help)
+            usage
+            ;;
+        "")
+            usage >/dev/stderr
+            exit 2
+            ;;
+        shell)
+            bash --init-file <(echo "source $0; alias d=docker;PROMPT_COMMAND=""; PS1='dockhack> ' ")
+            ;;
+        "cp "*)
+            local ID="$2"
+            local source="$3"
+            local target="$4"
+            _cp "$ID" "$source" "$target"
+            ;;
+        *)
+            # execute the sub commands now that the above functions are loaded
+            [[ -z $DOCKHACK_SKIP_UID_CHECK ]] && [[ "$UID" != "0" ]] && {
+                echo "WARNING: You need to run this as root on the host."  >/dev/stderr
+                echo "WARNING: Most commands require root privileges"  >/dev/stderr
+            }
+            "$@"
+            ;;
+    esac
+}
+[[ "$BASH_SOURCE" == "$0" ]] && main "$@"
