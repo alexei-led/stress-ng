@@ -1,1 +1,6 @@
-stress-ng
+# compiled binaries at repo root
+/stress-ng
+/cg-inject
+
+# test coverage
+coverage.out

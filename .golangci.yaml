@@ -1,0 +1,78 @@
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - durationcheck
+    - errcheck
+    - errorlint
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - govet
+    - ineffassign
+    - maintidx
+    - misspell
+    - nakedret
+    - nilerr
+    - nolintlint
+    - predeclared
+    - reassign
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    funlen:
+      lines: 80
+      statements: 40
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+    goconst:
+      min-len: 2
+      min-occurrences: 3
+    misspell:
+      locale: US
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - ifElseChain
+        - unnamedResult
+        - whyNoLint
+    gosec:
+      excludes:
+        - G204 # subprocess launched with variable — intentional in cg-inject (exec)
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - funlen
+          - gosec
+          - gocognit
+          - goconst
+          - gocyclo
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

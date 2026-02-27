@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   build:
+    name: Build (${{ matrix.platform }})
     strategy:
       matrix:
         include:
@@ -22,6 +23,15 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run unit tests
+        run: go test -race ./cmd/cg-inject/
 
       - name: Install build dependencies
         run: |
@@ -72,6 +82,7 @@ jobs:
           retention-days: 1
 
   merge:
+    name: Merge Manifests
     runs-on: ubuntu-24.04
     needs: build
     outputs:
@@ -112,6 +123,7 @@ jobs:
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
   test:
+    name: Integration Tests
     runs-on: ubuntu-24.04
     needs: merge
     steps:
@@ -123,18 +135,13 @@ jobs:
           TEST_IMAGE="ghcr.io/${{ github.repository_owner }}/stress-ng:${{ needs.merge.outputs.version }}" ./tests/test-docker.sh
 
   github-release:
+    name: GitHub Release
     runs-on: ubuntu-24.04
     needs: [merge, test]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Get previous tag
-        id: prev_tag
-        run: |
-          prev=$(git tag --sort=-v:refname | sed -n '2p' || echo "")
-          echo "prev_tag=${prev}" >> "$GITHUB_OUTPUT"
 
       - name: Generate release notes
         run: |
@@ -144,13 +151,19 @@ jobs:
           {
             echo "## stress-ng ${version}"
             echo ""
-            echo "Minimal \`scratch\` Docker image with statically linked [stress-ng ${version}](https://github.com/ColinIanKing/stress-ng/tree/V${version})."
+            echo "Minimal \`scratch\` Docker image with statically linked [stress-ng ${version}](https://github.com/ColinIanKing/stress-ng/tree/V${version}) and [\`cg-inject\`](./cmd/cg-inject/) helper binary."
             echo ""
             echo "### Docker Image"
             echo ""
             echo "\`\`\`bash"
             echo "docker pull ghcr.io/alexei-led/stress-ng:${version}"
             echo "\`\`\`"
+            echo ""
+            echo "### Binaries"
+            echo "| Binary | Purpose |"
+            echo "|--------|---------|"
+            echo "| \`/stress-ng\` | Default entrypoint — the stress-ng tool |"
+            echo "| \`/cg-inject\` | Pumba \`--inject-cgroup\` helper — joins cgroup then exec's stress-ng |"
             echo ""
             echo "### Platforms"
             echo "- \`linux/amd64\` (native runner)"
