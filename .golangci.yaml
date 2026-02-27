@@ -71,6 +71,7 @@ linters:
           - gocognit
           - goconst
           - gocyclo
+          - maintidx
 
 formatters:
   enable:

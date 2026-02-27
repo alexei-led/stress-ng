@@ -448,7 +448,7 @@ func TestRun(t *testing.T) {
 		var execCalled bool
 		var execPath string
 		var execArgs []string
-		execCommand = func(argv0 string, argv []string, envv []string) error {
+		execCommand = func(argv0 string, argv []string, _ []string) error {
 			execCalled = true
 			execPath = argv0
 			execArgs = argv
@@ -504,7 +504,7 @@ func TestRun(t *testing.T) {
 		}
 
 		var execCalled bool
-		execCommand = func(argv0 string, argv []string, _ []string) error {
+		execCommand = func(_ string, _ []string, _ []string) error {
 			execCalled = true
 			return nil
 		}
