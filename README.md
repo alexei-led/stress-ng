@@ -42,6 +42,26 @@ spec:
       args: ["--cpu", "2", "--timeout", "60s", "--metrics-brief"]
 ```
 
+## Troubleshooting
+
+### "stress-ng: error: [1] No stress workers"
+
+This error occurs when you run the container **without specifying any stressors**. stress-ng requires at least one stressor type (CPU, memory, I/O, etc.) to run.
+
+**Solution:** Always pass at least one argument. Examples:
+
+```bash
+# CPU stress only (default)
+docker run --rm ghcr.io/alexei-led/stress-ng --cpu 2 --timeout 60s
+
+# View all available options
+docker run --rm ghcr.io/alexei-led/stress-ng --help
+
+# Complex example: CPU + memory + I/O
+docker run --rm ghcr.io/alexei-led/stress-ng \
+  --cpu 4 --vm 2 --vm-bytes 512M --io 2 --timeout 120s --metrics-brief
+```
+
 ## How It Works
 
 - **No source code in this repo** — only the minimal build configuration.
